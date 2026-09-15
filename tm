@@ -86,9 +86,11 @@ def get_sessions(host):
     return sessions, None
 
 
-def get_all_sessions(hosts):
+def get_all_sessions(hosts, include_local=True):
     """Fetch sessions from local + all hosts in parallel. Returns (sessions, errors)."""
-    targets = [LOCAL] + hosts
+    targets = ([LOCAL] if include_local else []) + hosts
+    if not targets:
+        return [], []
     with ThreadPoolExecutor(max_workers=min(len(targets), 16)) as pool:
         results = pool.map(get_sessions, targets)
     sessions, errors = [], []
@@ -219,23 +221,75 @@ def self_update():
     console.print(f"[green]Updated {dest} to the latest version.[/]")
 
 
+USAGE = """\
+[bold]tm[/bold] - tmux session manager
+
+[bold]Usage:[/] tm \\[command]
+
+[bold]Commands:[/]
+  [cyan](none)[/]          interactive UI, local + all remote hosts
+  [cyan]local[/]           interactive UI, local sessions only
+  [cyan]remote[/]          interactive UI, remote sessions only
+  [cyan]ls[/]              list all sessions and exit
+  [cyan]attach <name>[/]   attach directly (name or host:name)
+  [cyan]update[/]          update tm to the latest version
+  [cyan]help[/]            show this help
+
+Remote hosts are discovered from Host entries in ~/.ssh/config."""
+
+
 def main():
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "update":
-            self_update()
-            return
-        console.print(f"[red]Unknown command:[/] {sys.argv[1]}")
-        console.print("Usage: tm [update]")
+    args = sys.argv[1:]
+    cmd = args[0] if args else ""
+
+    if cmd in ("help", "-h", "--help"):
+        console.print(USAGE)
+        return
+    if cmd == "update":
+        self_update()
+        return
+
+    include_local = True
+    hosts = ssh_config_hosts()
+
+    if cmd == "local":
+        hosts = []
+    elif cmd == "remote":
+        include_local = False
+        if not hosts:
+            console.print("[yellow]No remote hosts found in ~/.ssh/config.[/]")
+            sys.exit(1)
+    elif cmd == "ls":
+        sessions, errors = get_all_sessions(hosts)
+        for host, error in errors:
+            console.print(f"[yellow]{host}:[/] [dim]{error}[/dim]")
+        if sessions:
+            display_sessions(sessions)
+        else:
+            console.print("[dim]No active tmux sessions.[/dim]")
+        return
+    elif cmd in ("attach", "a") and len(args) > 1:
+        sessions, _ = get_all_sessions(hosts)
+        session = resolve_session(args[1], sessions)
+        if not session:
+            console.print(f"[red]No session matching '{args[1]}'.[/]")
+            sys.exit(1)
+        attach_session(session)
+        return
+    elif cmd:
+        console.print(f"[red]Unknown command:[/] {cmd}\n")
+        console.print(USAGE)
         sys.exit(1)
 
     console.print(Panel("[bold]tm[/bold] - tmux session manager", border_style="blue", expand=False))
-    hosts = ssh_config_hosts()
-    if hosts:
+    if include_local and not hosts and cmd == "local":
+        console.print("[dim]Local sessions only.[/dim]")
+    elif hosts:
         console.print(f"[dim]Remote hosts: {', '.join(hosts)}[/dim]")
 
     while True:
         with console.status("[dim]Scanning sessions...[/dim]"):
-            sessions, errors = get_all_sessions(hosts)
+            sessions, errors = get_all_sessions(hosts, include_local)
 
         for host, error in errors:
             console.print(f"[yellow]{host}:[/] [dim]{error}[/dim]")

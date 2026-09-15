@@ -65,20 +65,22 @@ Website: [viacopia.co/tmax](https://viacopia.co/tmax/)
 ## Usage
 
 ```sh
-tm
+tm                # interactive UI, local + all remote hosts
+tm local          # local sessions only
+tm remote         # remote sessions only
+tm ls             # list all sessions and exit
+tm attach <name>  # attach directly (name or host:name)
+tm update         # update tm to the latest version
+tm help           # show help
 ```
+
+Interactive keys:
 
 - `a` — attach to a session (by #, name, or host:name)
 - `n` — create a new session (pick a host)
 - `k` — kill a session
 - `r` — refresh the list
 - `q` — quit
-
-Update to the latest version any time:
-
-```sh
-tm update
-```
 
 Remote hosts are discovered automatically from `Host` entries in
 `~/.ssh/config` (wildcard entries are ignored). If a host is unreachable or
