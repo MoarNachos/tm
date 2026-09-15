@@ -70,7 +70,9 @@ def get_sessions(host):
         err = result.stderr.strip().splitlines()
         err = err[-1] if err else f"exit code {result.returncode}"
         # No tmux server / no sessions is a normal state, not an error
-        if "no server running" in err or "no sessions" in err.lower():
+        if ("no server running" in err
+                or "no sessions" in err.lower()
+                or ("error connecting to" in err and "No such file or directory" in err)):
             return [], None
         return [], err
     sessions = []

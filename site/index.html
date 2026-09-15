@@ -100,17 +100,25 @@
 <div class="demo"><span class="t-border">┌───────────────────────────────┐
 │</span> <b>tm</b> - tmux session manager    <span class="t-border">│
 └───────────────────────────────┘</span>
-<span class="t-dim">Remote hosts: prod, staging, pi</span>
+<span class="t-dim">Remote hosts: ditch, viacopia</span>
 
-               tmux sessions
-<span class="t-border">┏━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┓
-┃</span> #  <span class="t-border">┃</span> Host    <span class="t-border">┃</span> Name    <span class="t-border">┃</span> Windows <span class="t-border">┃</span> Attached <span class="t-border">┃
-┡━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━┩
-│</span> 1  <span class="t-border">│</span> <span class="t-host">local</span>   <span class="t-border">│</span> <span class="t-name">work</span>    <span class="t-border">│</span>    3    <span class="t-border">│</span>   <span class="t-yes">yes</span>    <span class="t-border">│
-│</span> 2  <span class="t-border">│</span> <span class="t-host">prod</span>    <span class="t-border">│</span> <span class="t-name">deploy</span>  <span class="t-border">│</span>    2    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│
-│</span> 3  <span class="t-border">│</span> <span class="t-host">staging</span> <span class="t-border">│</span> <span class="t-name">api</span>     <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│
-│</span> 4  <span class="t-border">│</span> <span class="t-host">pi</span>      <span class="t-border">│</span> <span class="t-name">sensors</span> <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│
-└────┴─────────┴─────────┴─────────┴──────────┘</span>
+                              tmux sessions
+<span class="t-border">┏━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┓
+┃</span> #    <span class="t-border">┃</span> Host     <span class="t-border">┃</span> Name                           <span class="t-border">┃</span> Windows <span class="t-border">┃</span> Attached <span class="t-border">┃
+┡━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━┩</span>
+<span class="t-border">│</span> 1    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">Ditch Ops</span>                      <span class="t-border">│</span>    1    <span class="t-border">│</span>   <span class="t-yes">yes</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 2    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ThalosX</span>                        <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 3    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">claude-thalos-planning-session</span> <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 4    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ditch-alert-investigation</span>      <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 5    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ditch-build-bot</span>                <span class="t-border">│</span>    1    <span class="t-border">│</span>   <span class="t-yes">yes</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 6    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ditch-posthog</span>                  <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 7    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ditch-uat</span>                      <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 8    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">ditch-user-cleanup</span>             <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 9    <span class="t-border">│</span> <span class="t-host">ditch</span>    <span class="t-border">│</span> <span class="t-name">thalos-backtest-fable</span>          <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 10   <span class="t-border">│</span> <span class="t-host">viacopia</span> <span class="t-border">│</span> <span class="t-name">EPP</span>                            <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 11   <span class="t-border">│</span> <span class="t-host">viacopia</span> <span class="t-border">│</span> <span class="t-name">nades-games</span>                    <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">│</span> 12   <span class="t-border">│</span> <span class="t-host">viacopia</span> <span class="t-border">│</span> <span class="t-name">viacopia</span>                       <span class="t-border">│</span>    1    <span class="t-border">│</span>    <span class="t-dim">no</span>    <span class="t-border">│</span>
+<span class="t-border">└──────┴──────────┴────────────────────────────────┴─────────┴──────────┘</span>
 
 <span class="t-key">a</span>=attach  <span class="t-key">n</span>=new  <span class="t-key">k</span>=kill  <span class="t-key">r</span>=refresh  <span class="t-key">q</span>=quit</div>
 
