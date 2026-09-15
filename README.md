@@ -45,12 +45,22 @@ a=attach  n=new  k=kill  r=refresh  q=quit
 
 ## Install
 
+One-liner:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MoarNachos/tm/main/install.sh | bash
+```
+
+Or manually:
+
 ```sh
 git clone https://github.com/MoarNachos/tm.git
 cd tm
 pip install rich
 install -m 755 tm ~/.local/bin/tm
 ```
+
+Website: [viacopia.co/tmax](https://viacopia.co/tmax/)
 
 ## Usage
 
