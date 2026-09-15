@@ -50,22 +50,29 @@ def tmux_cmd(host, args):
     """Build a tmux command for local or a remote host."""
     if host == LOCAL:
         return ["tmux"] + args
-    # Quote for the remote shell so tmux format strings (#{...}) survive
+    # Quote for the remote shell so tmux format strings (#{...}) survive.
+    # Non-interactive ssh often has a minimal PATH, so add common tmux locations.
     remote = " ".join(shlex.quote(a) for a in ["tmux"] + args)
+    remote = 'PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" ' + remote
     return ["ssh"] + SSH_OPTS + [host, remote]
 
 
 def get_sessions(host):
-    """Get tmux sessions on a host. Returns [] on any failure."""
+    """Get tmux sessions on a host. Returns (sessions, error)."""
     try:
         result = subprocess.run(
             tmux_cmd(host, ["list-sessions", "-F", LIST_FORMAT]),
-            capture_output=True, text=True, timeout=6,
+            capture_output=True, text=True, timeout=8,
         )
     except subprocess.TimeoutExpired:
-        return []
+        return [], "timed out"
     if result.returncode != 0:
-        return []
+        err = result.stderr.strip().splitlines()
+        err = err[-1] if err else f"exit code {result.returncode}"
+        # No tmux server / no sessions is a normal state, not an error
+        if "no server running" in err or "no sessions" in err.lower():
+            return [], None
+        return [], err
     sessions = []
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
@@ -76,18 +83,20 @@ def get_sessions(host):
                 "windows": parts[1],
                 "attached": "yes" if parts[2] == "1" else "no",
             })
-    return sessions
+    return sessions, None
 
 
 def get_all_sessions(hosts):
-    """Fetch sessions from local + all hosts in parallel."""
+    """Fetch sessions from local + all hosts in parallel. Returns (sessions, errors)."""
     targets = [LOCAL] + hosts
     with ThreadPoolExecutor(max_workers=min(len(targets), 16)) as pool:
         results = pool.map(get_sessions, targets)
-    sessions = []
-    for host_sessions in results:
+    sessions, errors = [], []
+    for host, (host_sessions, error) in zip(targets, results):
         sessions.extend(host_sessions)
-    return sessions
+        if error:
+            errors.append((host, error))
+    return sessions, errors
 
 
 def display_sessions(sessions):
@@ -115,7 +124,8 @@ def attach_session(session):
         else:
             subprocess.run(["tmux", "attach-session", "-t", name])
     else:
-        remote = f"tmux attach-session -t {shlex.quote(name)}"
+        remote = ('PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" '
+                  f"tmux attach-session -t {shlex.quote(name)}")
         subprocess.run(["ssh", "-t"] + SSH_OPTS + [host, remote])
 
 
@@ -183,7 +193,10 @@ def main():
 
     while True:
         with console.status("[dim]Scanning sessions...[/dim]"):
-            sessions = get_all_sessions(hosts)
+            sessions, errors = get_all_sessions(hosts)
+
+        for host, error in errors:
+            console.print(f"[yellow]{host}:[/] [dim]{error}[/dim]")
 
         if sessions:
             console.print()
