@@ -185,7 +185,49 @@ def resolve_session(choice, sessions):
     return None
 
 
+RAW_URL = "https://raw.githubusercontent.com/MoarNachos/tm/main/tm"
+
+
+def self_update():
+    """Replace this script with the latest version from GitHub."""
+    import urllib.request
+
+    dest = os.path.realpath(__file__)
+    console.print(f"[dim]Checking {RAW_URL}[/dim]")
+    try:
+        with urllib.request.urlopen(RAW_URL, timeout=15) as resp:
+            latest = resp.read()
+    except Exception as e:
+        console.print(f"[red]Update failed:[/] {e}")
+        sys.exit(1)
+    if not latest.startswith(b"#!"):
+        console.print("[red]Update failed:[/] downloaded file doesn't look like a script")
+        sys.exit(1)
+    with open(dest, "rb") as f:
+        if f.read() == latest:
+            console.print("[green]Already up to date.[/]")
+            return
+    tmp = dest + ".new"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(latest)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, dest)
+    except OSError as e:
+        console.print(f"[red]Update failed:[/] {e}")
+        sys.exit(1)
+    console.print(f"[green]Updated {dest} to the latest version.[/]")
+
+
 def main():
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "update":
+            self_update()
+            return
+        console.print(f"[red]Unknown command:[/] {sys.argv[1]}")
+        console.print("Usage: tm [update]")
+        sys.exit(1)
+
     console.print(Panel("[bold]tm[/bold] - tmux session manager", border_style="blue", expand=False))
     hosts = ssh_config_hosts()
     if hosts:

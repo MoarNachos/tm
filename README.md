@@ -74,6 +74,12 @@ tm
 - `r` — refresh the list
 - `q` — quit
 
+Update to the latest version any time:
+
+```sh
+tm update
+```
+
 Remote hosts are discovered automatically from `Host` entries in
 `~/.ssh/config` (wildcard entries are ignored). If a host is unreachable or
 has no tmux server running, it's silently skipped.
