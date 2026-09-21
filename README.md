@@ -86,6 +86,34 @@ Remote hosts are discovered automatically from `Host` entries in
 `~/.ssh/config` (wildcard entries are ignored). If a host is unreachable or
 has no tmux server running, it's silently skipped.
 
+## Load-balanced clusters
+
+Some clusters assign you a random node each time you ssh in (e.g.
+`ssh workcluster` lands on `workcluster-042`), so a tmux session started on
+one node is invisible the next time you connect. If the cluster shares home
+directories across nodes, `tm` can track your sessions for you.
+
+List the cluster's ssh alias in `~/.config/tm/clusters`, one per line:
+
+```
+workcluster
+```
+
+Then:
+
+- **Create** — when you create a session on the cluster, `tm` records the
+  node's hostname in `~/.tm-nodes` (in the shared home) before starting tmux
+- **List** — `tm` connects once, then checks every recorded node from inside
+  the cluster; sessions show up as `workcluster/workcluster-042`
+- **Attach / kill** — `tm` hops through the login node to the right node
+  automatically (`ssh -t workcluster ssh -t workcluster-042 tmux attach`)
+- **Cleanup** — nodes whose tmux server is gone are pruned from `~/.tm-nodes`
+  on the next scan; unreachable nodes are kept (they might just be down)
+
+Requires that nodes can ssh to each other (typical on shared-home clusters).
+Sessions started outside `tm` are picked up too, as long as the node is in
+`~/.tm-nodes` — or run `hostname >> ~/.tm-nodes` once from that node.
+
 ## License
 
 MIT

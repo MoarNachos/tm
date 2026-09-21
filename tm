@@ -25,6 +25,9 @@ console = Console()
 LOCAL = "local"
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=3"]
 LIST_FORMAT = "#{session_name}\t#{session_windows}\t#{session_attached}"
+PATH_PREFIX = 'PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" '
+CLUSTERS_PATH = os.path.expanduser("~/.config/tm/clusters")
+NODES_FILE = "$HOME/.tm-nodes"
 
 
 def ssh_config_hosts():
@@ -46,14 +49,28 @@ def ssh_config_hosts():
     return hosts
 
 
-def tmux_cmd(host, args):
-    """Build a tmux command for local or a remote host."""
+def cluster_hosts():
+    """Return ssh aliases listed in ~/.config/tm/clusters (load-balanced clusters)."""
+    try:
+        with open(CLUSTERS_PATH) as f:
+            return [ln.strip() for ln in f
+                    if ln.strip() and not ln.strip().startswith("#")]
+    except OSError:
+        return []
+
+
+def tmux_cmd(host, args, node=None):
+    """Build a tmux command for local, a remote host, or a node inside a cluster."""
     if host == LOCAL:
         return ["tmux"] + args
     # Quote for the remote shell so tmux format strings (#{...}) survive.
     # Non-interactive ssh often has a minimal PATH, so add common tmux locations.
     remote = " ".join(shlex.quote(a) for a in ["tmux"] + args)
-    remote = 'PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" ' + remote
+    remote = PATH_PREFIX + remote
+    if node:
+        # Two-hop: ssh to the cluster's login node, then to the recorded node.
+        remote = ("ssh -o BatchMode=yes -o ConnectTimeout=3 "
+                  f"{shlex.quote(node)} {shlex.quote(remote)}")
     return ["ssh"] + SSH_OPTS + [host, remote]
 
 
@@ -88,13 +105,63 @@ def get_sessions(host):
     return sessions, None
 
 
-def get_all_sessions(hosts, include_local=True):
+def cluster_list_script():
+    """Shell script run on a cluster login node: list sessions on every node
+    recorded in ~/.tm-nodes, and prune nodes whose tmux server is gone."""
+    inner = PATH_PREFIX + f'tmux list-sessions -F "{LIST_FORMAT}"'
+    return (
+        f'F="{NODES_FILE}"; [ -f "$F" ] || exit 0; keep=""; '
+        'for n in $(sort -u "$F"); do '
+        f"out=$(ssh -o BatchMode=yes -o ConnectTimeout=3 \"$n\" '{inner}' 2>&1); "
+        'if [ $? -eq 0 ]; then keep="$keep $n"; '
+        'printf \'%s\\n\' "$out" | sed "s/^/$n\t/"; '
+        "elif printf '%s' \"$out\" | "
+        "grep -qiE 'no server running|no sessions|error connecting to'; then :; "
+        'else keep="$keep $n"; fi; '
+        'done; printf \'%s\\n\' $keep > "$F"'
+    )
+
+
+def get_cluster_sessions(alias):
+    """Get tmux sessions on all recorded nodes of a cluster. Returns (sessions, error)."""
+    try:
+        result = subprocess.run(
+            ["ssh"] + SSH_OPTS + [alias, cluster_list_script()],
+            capture_output=True, text=True, timeout=25,
+        )
+    except subprocess.TimeoutExpired:
+        return [], "timed out"
+    if result.returncode != 0:
+        err = result.stderr.strip().splitlines()
+        err = err[-1] if err else f"exit code {result.returncode}"
+        return [], err
+    sessions = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) == 4:
+            sessions.append({
+                "host": alias,
+                "node": parts[0],
+                "name": parts[1],
+                "windows": parts[2],
+                "attached": "yes" if parts[3] == "1" else "no",
+            })
+    return sessions, None
+
+
+def get_all_sessions(hosts, clusters=(), include_local=True):
     """Fetch sessions from local + all hosts in parallel. Returns (sessions, errors)."""
-    targets = ([LOCAL] if include_local else []) + hosts
+    targets = ([LOCAL] if include_local else []) + hosts + list(clusters)
     if not targets:
         return [], []
+
+    def fetch(host):
+        if host in clusters:
+            return get_cluster_sessions(host)
+        return get_sessions(host)
+
     with ThreadPoolExecutor(max_workers=min(len(targets), 16)) as pool:
-        results = pool.map(get_sessions, targets)
+        results = pool.map(fetch, targets)
     sessions, errors = [], []
     for host, (host_sessions, error) in zip(targets, results):
         sessions.extend(host_sessions)
@@ -113,8 +180,9 @@ def display_sessions(sessions):
 
     for i, s in enumerate(sessions, 1):
         attached_style = "green" if s["attached"] == "yes" else "dim"
+        host = s["host"] + (f"/{s['node']}" if s.get("node") else "")
         table.add_row(
-            str(i), s["host"], s["name"], s["windows"],
+            str(i), host, s["name"], s["windows"],
             Text(s["attached"], style=attached_style),
         )
     console.print(table)
@@ -128,29 +196,47 @@ def attach_session(session):
         else:
             subprocess.run(["tmux", "attach-session", "-t", name])
     else:
-        remote = ('PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" '
-                  f"tmux attach-session -t {shlex.quote(name)}")
+        remote = PATH_PREFIX + f"tmux attach-session -t {shlex.quote(name)}"
+        if session.get("node"):
+            # Hop through the cluster's login node to the node holding the session.
+            remote = (f"ssh -t -o BatchMode=yes -o ConnectTimeout=3 "
+                      f"{shlex.quote(session['node'])} {shlex.quote(remote)}")
         subprocess.run(["ssh", "-t"] + SSH_OPTS + [host, remote])
 
 
-def create_session(hosts):
+def create_session(hosts, clusters=()):
     name = Prompt.ask("[cyan]Session name[/]")
     if not name.strip():
         console.print("[red]No name given, cancelled.[/]")
         return
     host = LOCAL
-    if hosts:
-        host = Prompt.ask("[cyan]Host[/]", choices=[LOCAL] + hosts, default=LOCAL)
-    result = subprocess.run(
-        tmux_cmd(host, ["new-session", "-d", "-s", name]),
-        capture_output=True, text=True,
-    )
+    choices = [LOCAL] + hosts + list(clusters)
+    if len(choices) > 1:
+        host = Prompt.ask("[cyan]Host[/]", choices=choices, default=LOCAL)
+    node = None
+    if host in clusters:
+        # Whatever node the load balancer gives us: record it in the shared
+        # home so we can find the session again, then start tmux there.
+        script = (f'hostname >> "{NODES_FILE}"; '
+                  f'sort -u -o "{NODES_FILE}" "{NODES_FILE}"; '
+                  + PATH_PREFIX
+                  + f"tmux new-session -d -s {shlex.quote(name)} && hostname")
+        result = subprocess.run(["ssh"] + SSH_OPTS + [host, script],
+                                capture_output=True, text=True)
+        out = result.stdout.strip().splitlines()
+        node = out[-1] if out else None
+    else:
+        result = subprocess.run(
+            tmux_cmd(host, ["new-session", "-d", "-s", name]),
+            capture_output=True, text=True,
+        )
     if result.returncode != 0:
         console.print(f"[red]Error:[/] {result.stderr.strip()}")
         return
-    console.print(f"[green]Created session '{name}' on {host}[/]")
+    where = f"{host}/{node}" if node else host
+    console.print(f"[green]Created session '{name}' on {where}[/]")
     if Confirm.ask("Attach now?", default=True):
-        attach_session({"host": host, "name": name})
+        attach_session({"host": host, "name": name, "node": node})
 
 
 def kill_session(sessions):
@@ -159,11 +245,13 @@ def kill_session(sessions):
     if not session:
         console.print("[red]Invalid selection.[/]")
         return
-    label = f"{session['host']}:{session['name']}"
+    host_label = session["host"] + (f"/{session['node']}" if session.get("node") else "")
+    label = f"{host_label}:{session['name']}"
     if not Confirm.ask(f"Kill session [bold]{label}[/bold]?", default=False):
         return
     result = subprocess.run(
-        tmux_cmd(session["host"], ["kill-session", "-t", session["name"]]),
+        tmux_cmd(session["host"], ["kill-session", "-t", session["name"]],
+                 node=session.get("node")),
         capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -180,8 +268,13 @@ def resolve_session(choice, sessions):
             return sessions[idx]
     except ValueError:
         pass
-    matches = [s for s in sessions
-               if s["name"] == choice or f"{s['host']}:{s['name']}" == choice]
+    def labels(s):
+        yield s["name"]
+        yield f"{s['host']}:{s['name']}"
+        if s.get("node"):
+            yield f"{s['host']}/{s['node']}:{s['name']}"
+
+    matches = [s for s in sessions if choice in labels(s)]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
@@ -237,7 +330,13 @@ USAGE = """\
   [cyan]update[/]          update tm to the latest version
   [cyan]help[/]            show this help
 
-Remote hosts are discovered from Host entries in ~/.ssh/config."""
+Remote hosts are discovered from Host entries in ~/.ssh/config.
+
+[bold]Clusters:[/] for load-balanced hosts (ssh lands on a random node but
+home dirs are shared), list the ssh alias in ~/.config/tm/clusters, one
+per line. tm records the node's hostname in ~/.tm-nodes on the cluster
+when creating a session, finds sessions on all recorded nodes, attaches
+by hopping through the login node, and prunes nodes with no sessions."""
 
 
 def main():
@@ -252,17 +351,19 @@ def main():
         return
 
     include_local = True
-    hosts = ssh_config_hosts()
+    clusters = cluster_hosts()
+    hosts = [h for h in ssh_config_hosts() if h not in clusters]
 
     if cmd == "local":
         hosts = []
+        clusters = []
     elif cmd == "remote":
         include_local = False
-        if not hosts:
+        if not hosts and not clusters:
             console.print("[yellow]No remote hosts found in ~/.ssh/config.[/]")
             sys.exit(1)
     elif cmd == "ls":
-        sessions, errors = get_all_sessions(hosts)
+        sessions, errors = get_all_sessions(hosts, clusters)
         for host, error in errors:
             console.print(f"[yellow]{host}:[/] [dim]{error}[/dim]")
         if sessions:
@@ -271,7 +372,7 @@ def main():
             console.print("[dim]No active tmux sessions.[/dim]")
         return
     elif cmd in ("attach", "a") and len(args) > 1:
-        sessions, _ = get_all_sessions(hosts)
+        sessions, _ = get_all_sessions(hosts, clusters)
         session = resolve_session(args[1], sessions)
         if not session:
             console.print(f"[red]No session matching '{args[1]}'.[/]")
@@ -284,14 +385,15 @@ def main():
         sys.exit(1)
 
     console.print(Panel("[bold]tm[/bold] - tmux session manager", border_style="blue", expand=False))
-    if include_local and not hosts and cmd == "local":
+    if include_local and not hosts and not clusters and cmd == "local":
         console.print("[dim]Local sessions only.[/dim]")
-    elif hosts:
-        console.print(f"[dim]Remote hosts: {', '.join(hosts)}[/dim]")
+    elif hosts or clusters:
+        labels = hosts + [f"{c} (cluster)" for c in clusters]
+        console.print(f"[dim]Remote hosts: {', '.join(labels)}[/dim]")
 
     while True:
         with console.status("[dim]Scanning sessions...[/dim]"):
-            sessions, errors = get_all_sessions(hosts, include_local)
+            sessions, errors = get_all_sessions(hosts, clusters, include_local)
 
         for host, error in errors:
             console.print(f"[yellow]{host}:[/] [dim]{error}[/dim]")
@@ -311,7 +413,7 @@ def main():
         elif action == "r":
             continue
         elif action == "n":
-            create_session(hosts)
+            create_session(hosts, clusters)
         elif action == "a":
             if not sessions:
                 console.print("[yellow]No sessions to attach to. Create one first.[/]")
