@@ -11,6 +11,7 @@ import re
 import shlex
 import subprocess
 import sys
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
@@ -170,6 +171,24 @@ def get_all_sessions(hosts, clusters=(), include_local=True):
     return sessions, errors
 
 
+@lru_cache(maxsize=None)
+def host_label(alias):
+    if alias == LOCAL:
+        return alias
+    try:
+        result = subprocess.run(
+            ["ssh", "-G", "--", alias], capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return alias
+    if result.returncode == 0:
+        for line in result.stdout.splitlines():
+            key, _, value = line.partition(" ")
+            if key == "hostname" and value and value != alias:
+                return f"{alias} ({value})"
+    return alias
+
+
 def display_sessions(sessions):
     table = Table(title="tmux sessions", border_style="blue", show_lines=False)
     table.add_column("#", style="dim", width=4)
@@ -180,7 +199,7 @@ def display_sessions(sessions):
 
     for i, s in enumerate(sessions, 1):
         attached_style = "green" if s["attached"] == "yes" else "dim"
-        host = s["host"] + (f"/{s['node']}" if s.get("node") else "")
+        host = host_label(s["host"]) + (f"/{s['node']}" if s.get("node") else "")
         table.add_row(
             str(i), host, s["name"], s["windows"],
             Text(s["attached"], style=attached_style),
